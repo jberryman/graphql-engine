@@ -7,7 +7,7 @@ module Hasura.GraphQL.Transport.WebSocket
   , WSServerEnv
   ) where
 
-import qualified Control.Concurrent.Async                    as A
+import qualified Control.Concurrent.Async.Lifted             as A
 import qualified Control.Concurrent.STM                      as STM
 import qualified Data.Aeson                                  as J
 import qualified Data.Aeson.Casing                           as J
@@ -298,7 +298,8 @@ onStart serverEnv wsConn (StartMsg opId q) = catchAndIgnore $ do
       logOpEv ODStarted (Just requestId)
       fieldRespsE <- liftIO $
         runExceptT $ do
-        flip mapM queryOrMutPlans $ \case
+        -- FIXME see HTTP.hs
+        A.forConcurrently queryOrMutPlans $ \case
           E.GQFieldResolvedHasura execOp ->
             case execOp of
               E.ExOpQuery opTx genSql ->

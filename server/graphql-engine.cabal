@@ -125,6 +125,7 @@ library
                      , stm-containers
                      , list-t
                      , async
+                     , lifted-async
 
                      -- logging related
                      , base64-bytestring >= 1.0

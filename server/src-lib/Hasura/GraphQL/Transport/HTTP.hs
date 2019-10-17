@@ -2,6 +2,8 @@ module Hasura.GraphQL.Transport.HTTP
   ( runGQ
   ) where
 
+import qualified Control.Concurrent.Async.Lifted        as A
+import           Control.Monad.Trans.Control
 import qualified Data.Sequence                          as Seq
 import qualified Data.Text                              as T
 import qualified Network.HTTP.Types                     as N
@@ -18,6 +20,9 @@ import qualified Hasura.GraphQL.Execute                 as E
 
 runGQ
   :: ( MonadIO m
+     , MonadBaseControl IO m
+     -- , A.Forall (A.Pure m)  -- TODO I think we should be able to use Async.Lifted.Safe
+     -- ^ ceremony for lifted-async
      , MonadError QErr m
      , MonadReader E.ExecutionCtx m
      )
@@ -30,7 +35,12 @@ runGQ reqId userInfo reqHdrs req = do
   E.ExecutionCtx _ sqlGenCtx pgExecCtx planCache sc scVer _ enableAL <- ask
   fieldPlans <- E.getResolvedExecPlan pgExecCtx planCache
               userInfo sqlGenCtx enableAL sc scVer req
-  fieldResps <- forM fieldPlans $ \case
+  -- do all top-level data fetching concurrently:
+  -- TODO consider:
+  --  - haxl for batching + concurrency
+  --  - or at least manually limiting concurrncy here (in case user has dozens of fields)
+  -- FIXME we need to run mutations serially; to do that cleanly (and since we should probably do this anyway) we want to move the query/mutation/subscription tag out of each individual field into a single parent data type (i.e. it's unclear at this call site that all fields are going to be the same op type)
+  fieldResps <- A.forConcurrently fieldPlans $ \case
     E.GQFieldResolvedHasura resolvedOp ->
       flip HttpResponse Nothing <$> runHasuraGQ reqId req userInfo resolvedOp
     E.GQFieldResolvedRemote rsi opType field ->
